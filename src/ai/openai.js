@@ -1,6 +1,26 @@
 const OpenAI = require("openai");
 
 module.exports = async function generateOpenAIReply(finalInput) {
+  let processedInput = "";
+  if (Array.isArray(finalInput)) {
+    processedInput = finalInput.map(item => {
+      if (typeof item === "object" && item !== null) {
+        if (item.content) {
+          if (typeof item.content === "string") {
+            return item.content;
+          } else {
+            return JSON.stringify(item.content);
+          }
+        } else {
+          return JSON.stringify(item);
+        }
+      }
+      return String(item);
+    }).join("\n");
+  } else {
+    processedInput = String(finalInput);
+  }
+  
   const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
   });
