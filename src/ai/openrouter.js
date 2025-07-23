@@ -38,7 +38,7 @@ module.exports = async function generateOpenRouterReply(finalInput, opts = {}) {
 
   // Construct payload based solely on the 'messages' field as per OpenRouter documentation.
   const payload = {
-    model: "moonshotai/kimi-k2:free",
+    model: "moonshotai/kimi-k2:freegit ",
     messages: [
       { role: "user", content: trimmedInput }
     ],
