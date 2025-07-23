@@ -46,7 +46,7 @@ class BotConfig {
     };
 
     this.debug = {
-      enabled: process.env.DEBUG !== 'false', // Default to enabled, disable with DEBUG=false
+      enabled: process.env.DEBUG,
       fetchedFile: constants.DEBUG_FETCHED_FILE,
       inputFile: constants.DEBUG_INPUT_FILE
     };

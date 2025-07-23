@@ -12,10 +12,8 @@ class DiscordBot {
       intents: config.discord.intents.map(intent => GatewayIntentBits[intent])
     });
 
-    // Initialize handlers
-    this.handlers = [
-      new MentionHandler(this.client)
-    ];
+    // Initialize the specific handler to use
+    this.currentHandler = new MentionHandler(this.client);
 
     this.setupEventListeners();
   }
@@ -49,12 +47,9 @@ class DiscordBot {
 
   async handleMessage(message) {
     try {
-      // Find a handler that can process this message
-      for (const handler of this.handlers) {
-        if (handler.shouldHandle(message)) {
-          await handler.handle(message);
-          break; // Only process with first matching handler
-        }
+      // Use the specific current handler
+      if (this.currentHandler.shouldHandle(message)) {
+        await this.currentHandler.handle(message);
       }
     } catch (error) {
       logger.error('Message handling error:', {
@@ -62,6 +57,18 @@ class DiscordBot {
         error: error.message
       });
     }
+  }
+
+  /**
+   * Switch to a different handler
+   * @param {BaseHandler} newHandler - The new handler to use
+   */
+  setHandler(newHandler) {
+    logger.info('Switching message handler', { 
+      from: this.currentHandler.constructor.name,
+      to: newHandler.constructor.name 
+    });
+    this.currentHandler = newHandler;
   }
 
   async start() {
