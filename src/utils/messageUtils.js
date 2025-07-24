@@ -3,14 +3,90 @@ const logger = require('./logger');
 // Discord epoch - January 1, 2015 UTC (in milliseconds)
 const DISCORD_EPOCH = 1420070400000;
 
+// Set to track processed message IDs to prevent duplicates
+const processedMessageIds = new Set();
+
+/**
+ * Determine if a date is in Eastern Daylight Time (EDT)
+ * EDT starts on second Sunday of March and ends on first Sunday of November
+ */
+function isEDT(date) {
+  const year = date.getFullYear();
+  
+  // Calculate second Sunday of March
+  const march = new Date(year, 2, 1); // March 1st
+  const dayOfWeek = march.getDay(); // 0 = Sunday, 1 = Monday, etc.
+  const secondSundayMarch = 14 - dayOfWeek; // Second Sunday
+  const dstStart = new Date(year, 2, secondSundayMarch, 2); // 2 AM on second Sunday
+  
+  // Calculate first Sunday of November
+  const november = new Date(year, 10, 1); // November 1st
+  const dayOfWeekNov = november.getDay();
+  const firstSundayNovember = 1 + (7 - dayOfWeekNov); // First Sunday
+  const dstEnd = new Date(year, 10, firstSundayNovember, 2); // 2 AM on first Sunday
+  
+  // Check if date is between DST start and end
+  return date >= dstStart && date < dstEnd;
+}
+
+/**
+ * Convert a date from America/New_York time to UTC
+ * America/New_York is UTC-5 for EST, UTC-4 for EDT
+ */
+function nyToUTC(nyDate) {
+  if (!(nyDate instanceof Date) || isNaN(nyDate.getTime())) {
+    throw new Error(`Invalid date provided: ${nyDate}`);
+  }
+  
+  // Determine if the date is in EDT (UTC-4) or EST (UTC-5)
+  const offset = isEDT(nyDate) ? 4 : 5; // hours
+  
+  // Convert to UTC by adding the offset
+  return new Date(nyDate.getTime() + (offset * 60 * 60 * 1000));
+}
+
+/**
+ * Convert a date from UTC to America/New_York time
+ * For debugging and logging purposes
+ */
+function utcToNY(utcDate) {
+  if (!(utcDate instanceof Date) || isNaN(utcDate.getTime())) {
+    throw new Error(`Invalid date provided: ${utcDate}`);
+  }
+  
+  // Determine if the UTC date corresponds to EDT or EST in New York
+  // Create a date in New York time by subtracting potential offsets and checking
+  const estDate = new Date(utcDate.getTime() - (5 * 60 * 60 * 1000));
+  const edtDate = new Date(utcDate.getTime() - (4 * 60 * 60 * 1000));
+  
+  // Check if the EDT date would be in EDT period
+  if (isEDT(edtDate)) {
+    return edtDate;
+  } else {
+    return estDate;
+  }
+}
+
 /**
  * Convert a date to Discord snowflake ID using proper calculation
+ * Expects date to be in UTC
  */
 function dateToSnowflake(date) {
   try {
     // Ensure we have a valid date
     if (!(date instanceof Date) || isNaN(date.getTime())) {
       throw new Error(`Invalid date provided: ${date}`);
+    }
+    
+    // Verify the date is in UTC by checking if getUTCHours equals getHours
+    // This is a best-effort check - it's not foolproof but helps catch obvious issues
+    if (date.getUTCHours() !== date.getHours() || 
+        date.getUTCMinutes() !== date.getMinutes() || 
+        date.getUTCSeconds() !== date.getSeconds()) {
+      logger.warn(`⚠️ Date provided to dateToSnowflake is not in UTC: ${date.toISOString()}`);
+      // Convert to UTC for safety
+      date = new Date(date.getTime() + (date.getTimezoneOffset() * 60 * 1000));
+      logger.debug(`🔄 Converted to UTC: ${date.toISOString()}`);
     }
     
     // Discord epoch check - ensure date is after January 1, 2015
@@ -289,29 +365,49 @@ function parseDate(dateStr) {
   logger.debug(`🔍 Parsing date string: "${dateStr}"`);
   
   if (dateStr.toLowerCase() === "today") {
+    // For "today", create date boundaries in America/New_York time first
     const now = new Date();
-    logger.debug(`📅 Parsed "today" as: ${now.toISOString()}`);
-    return now;
+    // Get current time in America/New_York
+    const nyOffset = now.getTimezoneOffset() + (isEDT(now) ? 240 : 300); // Adjust for EDT/EST
+    const nyTime = new Date(now.getTime() + (nyOffset * 60 * 1000));
+    
+    // Create start of day in America/New_York time
+    const nyStart = new Date(nyTime.getFullYear(), nyTime.getMonth(), nyTime.getDate(), 0, 0, 0, 0);
+    // Convert to UTC
+    const utcStart = nyToUTC(nyStart);
+    
+    logger.debug(`📅 Parsed "today" as: ${nyStart.toISOString()} (NY) -> ${utcStart.toISOString()} (UTC)`);
+    return utcStart;
   }
 
   // Try different date parsing approaches
   let parsedDate = null;
   
   // Method 1: Direct Date constructor
+  // First try to parse as-is, but interpret as America/New_York time
   parsedDate = new Date(dateStr);
   if (!isNaN(parsedDate)) {
-    logger.debug(`✅ Method 1 (Date constructor) successful: ${parsedDate.toISOString()}`);
-    return parsedDate;
+    // If the date string includes timezone info, it's already properly parsed
+    if (dateStr.match(/[+-]\d{2}:?\d{2}|Z$/)) {
+      logger.debug(`✅ Method 1 (Date constructor with timezone) successful: ${parsedDate.toISOString()}`);
+      return parsedDate;
+    }
+    
+    // Otherwise, assume it's America/New_York time and convert to UTC
+    const utcDate = nyToUTC(parsedDate);
+    logger.debug(`✅ Method 1 (Date constructor) successful: ${parsedDate.toISOString()} (NY) -> ${utcDate.toISOString()} (UTC)`);
+    return utcDate;
   }
   
   // Method 2: Handle MM/DD/YYYY format explicitly
   const mmddyyyy = dateStr.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
   if (mmddyyyy) {
     const [, month, day, year] = mmddyyyy;
-    parsedDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+    parsedDate = new Date(parseInt(year), parseInt(month) - 1, parseInt(day), 0, 0, 0, 0);
     if (!isNaN(parsedDate)) {
-      logger.debug(`✅ Method 2 (MM/DD/YYYY parsing) successful: ${parsedDate.toISOString()}`);
-      return parsedDate;
+      const utcDate = nyToUTC(parsedDate);
+      logger.debug(`✅ Method 2 (MM/DD/YYYY parsing) successful: ${parsedDate.toISOString()} (NY) -> ${utcDate.toISOString()} (UTC)`);
+      return utcDate;
     }
   }
   
@@ -320,10 +416,11 @@ function parseDate(dateStr) {
     const [, first, second, year] = mmddyyyy;
     // If first number > 12, assume DD/MM/YYYY format
     if (parseInt(first) > 12) {
-      parsedDate = new Date(parseInt(year), parseInt(second) - 1, parseInt(first));
+      parsedDate = new Date(parseInt(year), parseInt(second) - 1, parseInt(first), 0, 0, 0, 0);
       if (!isNaN(parsedDate)) {
-        logger.debug(`✅ Method 3 (DD/MM/YYYY parsing) successful: ${parsedDate.toISOString()}`);
-        return parsedDate;
+        const utcDate = nyToUTC(parsedDate);
+        logger.debug(`✅ Method 3 (DD/MM/YYYY parsing) successful: ${parsedDate.toISOString()} (NY) -> ${utcDate.toISOString()} (UTC)`);
+        return utcDate;
       }
     }
   }
@@ -350,19 +447,41 @@ function parseDateRange(content) {
   
   if (!endDateStr) {
     // Single date or { Today }
-    const parsedDate = parseDate(startDateStr);
-    if (!parsedDate) {
-      logger.error(`❌ Failed to parse start date: "${startDateStr}"`);
-      return null;
+    if (startDateStr.toLowerCase() === "today") {
+      // Special handling for "today" to ensure proper day boundaries in America/New_York time
+      const now = new Date();
+      
+      // Create start of day in America/New_York time (midnight)
+      const nyStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      
+      // Create end of day in America/New_York time (current time)
+      const nyEnd = now;
+      
+      // Convert both boundaries to UTC
+      const utcStart = nyToUTC(nyStart);
+      const utcEnd = nyToUTC(nyEnd);
+      
+      startUTC = utcStart.getTime();
+      endUTC = utcEnd.getTime();
+      
+      logger.debug(`📅 Single date range (today): ${nyStart.toISOString()} (NY) -> ${nyEnd.toISOString()} (NY) converted to ${utcStart.toISOString()} (UTC) -> ${utcEnd.toISOString()} (UTC)`);
+    } else {
+      // Regular date parsing
+      const parsedDate = parseDate(startDateStr);
+      if (!parsedDate) {
+        logger.error(`❌ Failed to parse start date: "${startDateStr}"`);
+        return null;
+      }
+      
+      // Create start and end of day boundaries in UTC
+      // The parsedDate is already in UTC, so we need to create the boundaries in UTC
+      const utcStart = new Date(Date.UTC(parsedDate.getUTCFullYear(), parsedDate.getUTCMonth(), parsedDate.getUTCDate(), 0, 0, 0, 0));
+      const utcEnd = new Date(Date.UTC(parsedDate.getUTCFullYear(), parsedDate.getUTCMonth(), parsedDate.getUTCDate(), 23, 59, 59, 999));
+      startUTC = utcStart.getTime();
+      endUTC = utcEnd.getTime();
+      
+      logger.debug(`📅 Single date range: ${utcStart.toISOString()} to ${utcEnd.toISOString()}`);
     }
-    
-    // Create start and end of day boundaries
-    const localStart = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate(), 0, 0, 0, 0);
-    const localEnd = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate(), 23, 59, 59, 999);
-    startUTC = localStart.getTime();
-    endUTC = localEnd.getTime();
-    
-    logger.debug(`📅 Single date range: ${localStart.toISOString()} to ${localEnd.toISOString()}`);
   } else {
     // Date range
     const startDate = parseDate(startDateStr);
@@ -373,18 +492,25 @@ function parseDateRange(content) {
       return null;
     }
     
-    const leftStart = new Date(startDate.getFullYear(), startDate.getMonth(), startDate.getDate(), 0, 0, 0, 0);
-    let rightEnd;
+    // Create start of day boundary for start date in UTC
+    const utcStart = new Date(Date.UTC(startDate.getUTCFullYear(), startDate.getUTCMonth(), startDate.getUTCDate(), 0, 0, 0, 0));
+    
+    let utcEnd;
     if (endDateStr.toLowerCase() === "today") {
-      rightEnd = endDate; // Keep the current time for "today"
+      // For "today", use current time in America/New_York and convert to UTC
+      const now = new Date();
+      // Create current time in America/New_York
+      const nyEnd = now;
+      utcEnd = nyToUTC(nyEnd);
     } else {
-      rightEnd = new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate(), 23, 59, 59, 999);
+      // Create end of day boundary for end date in UTC
+      utcEnd = new Date(Date.UTC(endDate.getUTCFullYear(), endDate.getUTCMonth(), endDate.getUTCDate(), 23, 59, 59, 999));
     }
     
-    startUTC = leftStart.getTime();
-    endUTC = rightEnd.getTime();
+    startUTC = utcStart.getTime();
+    endUTC = utcEnd.getTime();
     
-    logger.debug(`📅 Date range: ${leftStart.toISOString()} to ${rightEnd.toISOString()}`);
+    logger.debug(`📅 Date range: ${utcStart.toISOString()} to ${utcEnd.toISOString()}`);
   }
   
   // Validate the date range makes sense
@@ -436,10 +562,21 @@ async function fetchMessages(channel, { startUTC, endUTC, max = 1000 }) {
 }
 
 function buildOpenAIInput(sorted, userPrompt, botId) {
-  const input = sorted.map(msg => {
+  // Filter out already processed messages
+  const newMessages = sorted.filter(msg => !processedMessageIds.has(msg.id));
+  
+  // Add new message IDs to the processed set
+  newMessages.forEach(msg => processedMessageIds.add(msg.id));
+  
+  // Log the number of new vs total messages
+  logger.debug(`Processing ${newMessages.length} new messages out of ${sorted.length} total messages`);
+  
+  const input = newMessages.map(msg => {
     const username = msg.author?.username || msg.author?.id || "unknown";
-    const date = new Date(msg.createdTimestamp);
-    const dateStr = date.toISOString().replace('T', ' ').slice(0, 16);
+    // Convert message timestamp from UTC to America/New_York time for display
+    const utcDate = new Date(msg.createdTimestamp);
+    const nyDate = utcToNY(utcDate);
+    const dateStr = nyDate.toISOString().replace('T', ' ').slice(0, 16);
     let text = msg.id === botId
       ? userPrompt
       : `[${username} @ ${dateStr}] ${msg.content}`;
@@ -472,4 +609,4 @@ module.exports = {
   fetchMessages,
   fetchMessagesOptimized,
   buildOpenAIInput
-};;
+};

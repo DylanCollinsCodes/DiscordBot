@@ -1,6 +1,6 @@
 const OpenAI = require("openai");
 
-module.exports = async function generateOpenAIReply(finalInput) {
+module.exports = async function generateOpenAIReply(finalInput, opts = {}) {
   const openai = new OpenAI({
     apiKey: process.env.OPENAI_API_KEY,
   });

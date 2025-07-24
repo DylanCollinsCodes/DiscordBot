@@ -37,7 +37,7 @@ module.exports = async function generateOpenRouterReply(finalInput, opts = {}) {
   console.debug("Final processed input length:", trimmedInput.length);
 
   // Truncate input to stay within OpenRouter's 2000 character limit
-  const maxInputLength = 2000;
+  const maxInputLength = 100000;
   const truncatedInput = trimmedInput.length > maxInputLength 
     ? trimmedInput.substring(0, maxInputLength) 
     : trimmedInput;
@@ -168,11 +168,6 @@ module.exports = async function generateOpenRouterReply(finalInput, opts = {}) {
             response.data.choices[0]?.message?.content
           ) {
             reply = response.data.choices[0].message.content.trim();
-          }
-          
-          // If sendMessage callback is provided, use it to send the reply (for debug mode batching)
-          if (opts.sendMessage && typeof opts.sendMessage === 'function' && reply) {
-            await opts.sendMessage(reply);
           }
           
           return reply;
