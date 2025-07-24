@@ -1,8 +1,9 @@
 const openai = require('./openai');
-// In the future, add: const claude = require('./claude'); etc.
+const openrouter = require('./openrouter'); // Add OpenRouter provider
 
 const providers = {
   openai,
+  openrouter, // Register OpenRouter provider
   // claude,
   // groq,
   // ...etc
