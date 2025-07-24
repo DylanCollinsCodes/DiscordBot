@@ -1,6 +1,5 @@
 const logger = require('./logger');
 
-
 // Discord epoch - January 1, 2015 UTC (in milliseconds)
 const DISCORD_EPOCH = 1420070400000;
 
@@ -473,4 +472,4 @@ module.exports = {
   fetchMessages,
   fetchMessagesOptimized,
   buildOpenAIInput
-};
+};;

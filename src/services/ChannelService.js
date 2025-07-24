@@ -160,17 +160,37 @@ class ChannelService {
   /**
    * Post limit warning message
    */
-  async postLimitWarning(channel, dateRange, stopTime) {
+  async postLimitWarning(channel, dateRange, stopTime, sortedMessages = []) {
     try {
-      const startTime = dateRange ? new Date(dateRange.startUTC).toLocaleString() : "?";
-      const endTime = stopTime ? stopTime.toLocaleString() : "unknown time";
+      let startTime, endTime;
       
-      const warningMessage = `Hit ${config.limits.maxMessagesFetch} message limit. ` +
-        `Collected messages from ${startTime} to ${endTime}. ` +
-        `Please use a smaller date range.`;
+      if (sortedMessages.length > 0) {
+        // Use actual message timestamps for accurate reporting
+        const firstMessage = sortedMessages[0];
+        const lastMessage = sortedMessages[sortedMessages.length - 1];
+        
+        startTime = new Date(firstMessage.createdTimestamp).toLocaleString();
+        endTime = new Date(lastMessage.createdTimestamp).toLocaleString();
+      } else {
+        // Fallback to original logic if no messages provided
+        startTime = dateRange ? new Date(dateRange.startUTC).toLocaleString() : "?";
+        endTime = stopTime ? stopTime.toLocaleString() : "unknown time";
+      }
       
-      await channel.reply(warningMessage);
-      logger.warn('Posted limit warning', { dateRange, stopTime });
+      const warningMessage = `⚠️ **Hit ${config.limits.maxMessagesFetch} message limit!**\n` +
+        `Collected messages from **${startTime}** to **${endTime}**.\n` +
+        `Please use a smaller date range for complete results.`;
+      
+      await channel.send(warningMessage);
+      logger.warn('Posted limit warning', { 
+        dateRange, 
+        stopTime, 
+        actualRange: sortedMessages.length > 0 ? {
+          start: startTime,
+          end: endTime,
+          messageCount: sortedMessages.length
+        } : null
+      });
     } catch (error) {
       logger.error('Failed to post limit warning:', { error: error.message });
     }
