@@ -68,8 +68,8 @@ function findAnchorMessage(messageCollection, startUTC, endUTC) {
 async function expandFromAnchor(channel, anchorMessage, startUTC, endUTC, max) {
   if (!anchorMessage) return { sorted: [], rawLog: [], hitLimit: false, stopTime: null, apiCalls: 0 };
 
-  // Start with only messages that are actually in range
-  let allMessages = [];
+  // Start with only messages that are actually in range - use Map to ensure uniqueness
+  let allMessagesMap = new Map();
   let allRaw = [anchorMessage];
   let hitLimit = false;
   let stopTime = null;
@@ -78,7 +78,7 @@ async function expandFromAnchor(channel, anchorMessage, startUTC, endUTC, max) {
   // Only include anchor if it's actually in the target date range
   const anchorTs = anchorMessage.createdTimestamp;
   if (anchorTs >= startUTC && anchorTs <= endUTC) {
-    allMessages.push(anchorMessage);
+    allMessagesMap.set(anchorMessage.id, anchorMessage);
     logger.debug(`⚓ Anchor message IS in target range: ${new Date(anchorTs).toISOString()}`);
   } else {
     logger.debug(`⚓ Anchor message is OUTSIDE target range: ${new Date(anchorTs).toISOString()}, using as navigation point only`);
@@ -90,7 +90,7 @@ async function expandFromAnchor(channel, anchorMessage, startUTC, endUTC, max) {
   let beforeId = anchorMessage.id;
   let reachedStartBoundary = false;
   
-  while (allMessages.length < max && !reachedStartBoundary) {
+  while (allMessagesMap.size < max && !reachedStartBoundary) {
     const batch = await channel.messages.fetch({ limit: 100, before: beforeId });
     apiCalls++;
     logger.debug(`📡 API Call ${apiCalls}: Fetched ${batch.size} messages backward`);
@@ -109,10 +109,10 @@ async function expandFromAnchor(channel, anchorMessage, startUTC, endUTC, max) {
         break;
       }
       
-      // Only include messages within our target date range
-      if (ts >= startUTC && ts <= endUTC) {
-        allMessages.push(msg);
-        if (allMessages.length >= max) {
+      // Only include messages within our target date range (and avoid duplicates)
+      if (ts >= startUTC && ts <= endUTC && !allMessagesMap.has(msg.id)) {
+        allMessagesMap.set(msg.id, msg);
+        if (allMessagesMap.size >= max) {
           hitLimit = true;
           stopTime = new Date(ts);
           logger.debug(`📊 Hit message limit during backward expansion`);
@@ -132,42 +132,85 @@ async function expandFromAnchor(channel, anchorMessage, startUTC, endUTC, max) {
   let afterId = anchorMessage.id;
   let reachedEndBoundary = false;
   
-  while (allMessages.length < max && !reachedEndBoundary && !hitLimit) {
+  while (allMessagesMap.size < max && !hitLimit) {
     const batch = await channel.messages.fetch({ limit: 100, after: afterId });
     apiCalls++;
     logger.debug(`📡 API Call ${apiCalls}: Fetched ${batch.size} messages forward`);
     
-    if (batch.size === 0) break;
+    if (batch.size === 0) {
+      logger.debug(`📭 No more messages available, stopping forward expansion`);
+      break;
+    }
     
+    // Debug: Show timestamp range of this batch
+    const batchArray = Array.from(batch.values());
+    const firstMsg = batchArray[batchArray.length - 1]; // Oldest in batch (messages are newest first)
+    const lastMsg = batchArray[0]; // Newest in batch
+    logger.debug(`📅 Forward batch range: ${new Date(firstMsg.createdTimestamp).toISOString()} to ${new Date(lastMsg.createdTimestamp).toISOString()}`);
+    logger.debug(`🎯 Target end boundary: ${new Date(endUTC).toISOString()}`);
+    
+    // Track the newest message ID for pagination (regardless of whether we include it)
+    let newestMessageId = null;
+    let foundMessagesInRange = false;
+    let allMessagesBeyondBoundary = true;
+    
+    // Process all messages in the batch
     for (const msg of batch.values()) {
       allRaw.push(msg);
       const ts = msg.createdTimestamp;
       
-      // If we've gone past our end date, we're done expanding forward
-      if (ts > endUTC) {
-        logger.debug(`🛑 Reached end boundary at ${new Date(ts).toISOString()}`);
-        reachedEndBoundary = true;
-        if (!stopTime) stopTime = new Date(ts);
-        break;
+      // Always track the newest message for pagination
+      if (!newestMessageId) {
+        newestMessageId = msg.id;
       }
       
-      // Only include messages within our target date range
+      // Check if this message is within our target range
       if (ts >= startUTC && ts <= endUTC) {
-        allMessages.push(msg);
-        if (allMessages.length >= max) {
-          hitLimit = true;
-          stopTime = new Date(ts);
-          logger.debug(`📊 Hit message limit during forward expansion`);
-          break;
+        allMessagesBeyondBoundary = false;
+        foundMessagesInRange = true;
+        
+        // Include message if not already present (avoid duplicates)
+        if (!allMessagesMap.has(msg.id)) {
+          allMessagesMap.set(msg.id, msg);
+          if (allMessagesMap.size >= max) {
+            hitLimit = true;
+            stopTime = new Date(ts);
+            logger.debug(`📊 Hit message limit during forward expansion`);
+            break;
+          }
         }
+      } else if (ts > endUTC) {
+        // Message is beyond our end boundary
+        if (!reachedEndBoundary) {
+          logger.debug(`🛑 First message beyond end boundary at ${new Date(ts).toISOString()}`);
+          reachedEndBoundary = true;
+          if (!stopTime) stopTime = new Date(ts);
+        }
+      } else {
+        // Message is before our start boundary (shouldn't happen in forward expansion)
+        allMessagesBeyondBoundary = false;
       }
-      
-      afterId = msg.id;
     }
     
+    // Update afterId to the newest message in the batch for proper pagination
+    if (newestMessageId) {
+      afterId = newestMessageId;
+      logger.debug(`🔄 Updated afterId to: ${afterId} for next pagination`);
+    }
+    
+    // Stop if we hit the message limit
     if (hitLimit) break;
+    
+    // Stop if ALL messages in this batch were beyond the end boundary
+    // This means we've completely passed our target date range
+    if (allMessagesBeyondBoundary && reachedEndBoundary) {
+      logger.debug(`🏁 All messages in batch beyond target range, stopping expansion`);
+      break;
+    }
   }
 
+  // Convert Map values back to array and sort
+  const allMessages = Array.from(allMessagesMap.values());
   const sorted = allMessages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
   
   logger.debug(`📊 Expansion complete: ${sorted.length} messages collected with ${apiCalls} API calls`);
@@ -398,13 +441,13 @@ function parseDateRange(content) {
 }
 
 async function fetchMessages(channel, { startUTC, endUTC, max = 1000 }) {
-  let allMessages = [];
+  let allMessagesMap = new Map(); // Use Map to ensure unique messages by ID
   let allRaw = [];
   let beforeId = undefined;
   let hitLimit = false;
   let stopTime = null;
 
-  while (allMessages.length < max) {
+  while (allMessagesMap.size < max) {
     const batch = await channel.messages.fetch({ limit: 100, before: beforeId });
     if (batch.size === 0) break;
     allRaw.push(...batch.values());
@@ -419,18 +462,24 @@ async function fetchMessages(channel, { startUTC, endUTC, max = 1000 }) {
         beforeId = msg.id;
         continue;
       }
-      allMessages.push(msg);
-      kept++;
-      if (allMessages.length >= max) {
-        hitLimit = true;
-        stopTime = new Date(ts);
-        break;
+      // Only add if not already present (ensures uniqueness by ID)
+      if (!allMessagesMap.has(msg.id)) {
+        allMessagesMap.set(msg.id, msg);
+        kept++;
+        if (allMessagesMap.size >= max) {
+          hitLimit = true;
+          stopTime = new Date(ts);
+          break;
+        }
       }
       beforeId = msg.id;
     }
     if (hitLimit) break;
     if (batch.size > 0 && batch.last().createdTimestamp < startUTC) break;
   }
+  
+  // Convert Map values back to array and sort
+  const allMessages = Array.from(allMessagesMap.values());
   const sorted = allMessages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
   return { sorted, rawLog: allRaw, hitLimit, stopTime };
 }
