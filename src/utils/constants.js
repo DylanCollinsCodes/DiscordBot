@@ -2,7 +2,7 @@ module.exports = {
   // Message limits
   MAX_MESSAGES_FETCH: 1000,
   BATCH_SIZE: 100,
-  DISCORD_MESSAGE_LIMIT: 2000,
+  DISCORD_MESSAGE_LIMIT: 1800,
   
   // Context limits
   DEFAULT_CONTEXT_MESSAGES: 25,

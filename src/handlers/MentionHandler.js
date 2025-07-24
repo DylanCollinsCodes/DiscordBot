@@ -44,11 +44,12 @@ class MentionHandler extends BaseHandler {
         this.client.user.id
       );
 
-      // Process AI request
+      // Process AI request with sendMessage callback for debug mode
       const { input: aiInput, response } = await AIService.processAIRequest(
         sorted,
         userPrompt,
-        this.client.user.id
+        this.client.user.id,
+        { sendMessage: (msg) => message.channel.send(msg) }
       );
 
       // Write debug files if enabled
@@ -61,7 +62,7 @@ class MentionHandler extends BaseHandler {
         userPrompt
       });
 
-      // Handle response posting
+      // Handle response posting - this already includes batching via ChannelService
       await channelService.handleResponse(message.channel, response);
 
       // Post limit warning if necessary

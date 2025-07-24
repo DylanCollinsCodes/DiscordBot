@@ -21,10 +21,10 @@ class AIService {
   /**
    * Generate AI response from input
    */
-  async generateResponse(input) {
+  async generateResponse(input, opts = {}) {
     try {
       logger.info('Generating AI response');
-      const reply = await generateReply(input);
+      const reply = await generateReply(input, opts);
       
       if (!reply) {
         logger.warn('AI returned empty response');
@@ -49,10 +49,10 @@ class AIService {
   /**
    * Process complete AI workflow: build input and generate response
    */
-  async processAIRequest(messages, userPrompt, botId) {
+  async processAIRequest(messages, userPrompt, botId, opts = {}) {
     try {
       const input = this.buildAIInput(messages, userPrompt, botId);
-      const response = await this.generateResponse(input);
+      const response = await this.generateResponse(input, opts);
       
       return { input, response };
     } catch (error) {
