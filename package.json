@@ -15,6 +15,7 @@
     "@discordjs/voice": "^0.18.0",
     "discord.js": "^14.21.0",
     "dotenv": "^17.2.0",
-    "openai": "^5.10.2"
+    "openai": "^5.10.2",
+    "snowflake-id": "^1.1.0"
   }
 }

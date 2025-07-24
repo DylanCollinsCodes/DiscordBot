@@ -23,7 +23,11 @@ class DiscordBot {
   setupEventListeners() {
     // Bot ready event
     this.client.once('ready', () => {
-      logger.info(`Bot logged in as ${this.client.user.tag}!`);
+      logger.info(`Bot logged in as ${this.client.user.tag}!`, {
+        botId: this.client.user.id,
+        botUsername: this.client.user.username,
+        botDiscriminator: this.client.user.discriminator
+      });
     });
 
     // Message handling
@@ -49,18 +53,100 @@ class DiscordBot {
 
   async handleMessage(message) {
     try {
+      // Enhanced logging to catch ALL messages
+      logger.info('🔔 MESSAGE RECEIVED:', {
+        messageId: message.id,
+        authorId: message.author.id,
+        authorTag: message.author.tag,
+        channelId: message.channel.id,
+        content: message.content,
+        contentLength: message.content.length,
+        mentions: message.mentions.users.map(user => ({ id: user.id, tag: user.tag })),
+        mentionsBot: message.mentions.has(this.client.user),
+        isBot: message.author.bot,
+        timestamp: new Date().toISOString(),
+        createdAt: message.createdAt.toISOString()
+      });
+
+      // Specifically check for date patterns
+      const hasDatePattern = /\{\s*([0-9/]+|Today)(?:\s*-\s*([0-9/]+|Today))?\s*\}/i.test(message.content);
+      if (hasDatePattern) {
+        logger.info('📅 DATE PATTERN DETECTED:', {
+          messageId: message.id,
+          content: message.content,
+          authorTag: message.author.tag,
+          mentionsBot: message.mentions.has(this.client.user)
+        });
+      }
+
       // Find a handler that can process this message
+      let handlerFound = false;
       for (const handler of this.handlers) {
-        if (handler.shouldHandle(message)) {
-          await handler.handle(message);
+        const shouldHandle = handler.shouldHandle(message);
+        logger.debug('🔍 Checking handler:', {
+          handlerName: handler.constructor.name,
+          shouldHandle,
+          messageId: message.id,
+          mentionsBot: message.mentions.has(this.client.user),
+          isBot: message.author.bot
+        });
+        
+        if (shouldHandle) {
+          logger.info('✅ Handler processing message:', {
+            handlerName: handler.constructor.name,
+            messageId: message.id,
+            content: message.content.substring(0, 100)
+          });
+          
+          try {
+            await handler.handle(message);
+            logger.info('✅ Handler completed successfully:', {
+              handlerName: handler.constructor.name,
+              messageId: message.id
+            });
+          } catch (handlerError) {
+            logger.error('❌ Handler execution failed:', {
+              handlerName: handler.constructor.name,
+              messageId: message.id,
+              error: handlerError.message,
+              stack: handlerError.stack
+            });
+            throw handlerError; // Re-throw to be caught by outer try-catch
+          }
+          
+          handlerFound = true;
           break; // Only process with first matching handler
         }
       }
+
+      if (!handlerFound) {
+        logger.warn('⚠️ No handler found for message:', {
+          messageId: message.id,
+          content: message.content.substring(0, 100),
+          mentionsBot: message.mentions.has(this.client.user),
+          isBot: message.author.bot,
+          authorTag: message.author.tag
+        });
+      }
     } catch (error) {
-      logger.error('Message handling error:', {
-        messageId: message.id,
-        error: error.message
+      logger.error('💥 CRITICAL MESSAGE HANDLING ERROR:', {
+        messageId: message?.id,
+        authorId: message?.author?.id,
+        authorTag: message?.author?.tag,
+        channelId: message?.channel?.id,
+        content: message?.content?.substring(0, 200),
+        error: error.message,
+        stack: error.stack
       });
+      
+      // Try to reply with error if possible
+      try {
+        if (message && message.reply) {
+          await message.reply("I encountered an error processing your message. Please try again.");
+        }
+      } catch (replyError) {
+        logger.error('Failed to send error reply:', { error: replyError.message });
+      }
     }
   }
 

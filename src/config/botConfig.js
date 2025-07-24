@@ -1,4 +1,5 @@
 const constants = require('../utils/constants');
+const logger = require('../utils/logger');
 
 class BotConfig {
   constructor() {
@@ -16,7 +17,7 @@ class BotConfig {
 
     // Warn about optional variables
     if (!process.env.OPENAI_API_KEY) {
-      console.warn('Warning: OPENAI_API_KEY not found. AI features will not work.');
+      logger.warn('OPENAI_API_KEY not found. AI features will not work.');
     }
   }
 

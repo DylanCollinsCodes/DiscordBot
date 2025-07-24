@@ -3,7 +3,7 @@ const path = require('path');
 
 class Logger {
   constructor(options = {}) {
-    this.level = options.level || process.env.LOG_LEVEL || 'info';
+    this.level = options.level || process.env.LOG_LEVEL || 'debug';
     this.enableFileLogging = options.enableFileLogging || false;
     this.logFile = options.logFile || 'bot.log';
     
