@@ -1,4 +1,4 @@
-const { parseDateRange, fetchMessages } = require('../utils/messageUtils');
+const { parseDateRange, fetchMessagesOptimized } = require('../utils/messageUtils');
 const config = require('../config/botConfig');
 const logger = require('../utils/logger');
 
@@ -20,13 +20,63 @@ class MessageService {
   async fetchMessagesForContext(dateRange = null) {
     try {
       if (dateRange) {
-        logger.debug('Fetching messages with date range', { dateRange });
-        const result = await fetchMessages(this.channel, {
+        logger.debug('Fetching messages with optimized date range method', { dateRange });
+        
+        // Use optimized fetch for date range queries
+        const result = await fetchMessagesOptimized(this.channel, {
           ...dateRange,
           max: config.limits.maxMessagesFetch
         });
         
-        logger.info(`Fetched ${result.sorted.length} messages in date range`);
+        // Enhanced logging with performance metrics
+        const logData = {
+          messagesFound: result.sorted.length,
+          fetchTime: result.fetchTime || 'unknown',
+          apiCalls: result.apiCalls || 'unknown',
+          usedFallback: result.usedFallback || false,
+          hadError: result.hadError || false,
+          dateRange: {
+            start: new Date(dateRange.startUTC).toISOString(),
+            end: new Date(dateRange.endUTC).toISOString()
+          }
+        };
+        
+        if (result.usedFallback) {
+          logger.warn('Optimized fetch used fallback to linear search', logData);
+        } else {
+          logger.info(`✨ Optimized fetch successful: ${result.sorted.length} messages in ${result.fetchTime}ms with ${result.apiCalls} API calls`, logData);
+        }
+        
+        // Check if no messages were found in the requested date range
+        if (result.sorted.length === 0) {
+          const startDate = new Date(dateRange.startUTC);
+          const endDate = new Date(dateRange.endUTC);
+          
+          // Format dates for user-friendly display
+          const formatDate = (date) => {
+            return date.toLocaleDateString('en-US', { 
+              year: 'numeric', 
+              month: 'numeric', 
+              day: 'numeric' 
+            });
+          };
+          
+          let dateDisplayText;
+          if (startDate.toDateString() === endDate.toDateString()) {
+            // Single date
+            dateDisplayText = formatDate(startDate);
+          } else {
+            // Date range
+            dateDisplayText = `${formatDate(startDate)} - ${formatDate(endDate)}`;
+          }
+          
+          logger.info(`No messages found for requested date range: ${dateDisplayText}`);
+          
+          // Add a flag to indicate no messages were found
+          result.noMessagesFound = true;
+          result.requestedDateRange = dateDisplayText;
+        }
+        
         return result;
       } else {
         logger.debug('Fetching default context messages');
