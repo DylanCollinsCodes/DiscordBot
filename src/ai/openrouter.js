@@ -1,4 +1,5 @@
 const axios = require('axios');
+const logger = require('../utils/logger');
 
 /**
  * Generate a reply via OpenRouter using structured AI input.
@@ -18,14 +19,14 @@ module.exports = async function generateOpenRouterReply(finalInput, opts = {}) {
 
   // Build payload with optional overrides from opts
   const payload = {
-    model: opts.model || 'tngtech/deepseek-r1t2-chimera',
+    model: opts.model || 'deepseek/deepseek-r1-0528:free',
     messages,
     temperature: opts.temperature ?? 1,
     top_p: opts.top_p ?? 1,
     n: opts.n ?? 1
   };
 
-  console.debug("OpenRouter Request Payload:", JSON.stringify(payload, null, 2));
+  logger.debug("OpenRouter Request Payload:", payload);
 
   try {
     const response = await axios.post(
@@ -39,20 +40,20 @@ module.exports = async function generateOpenRouterReply(finalInput, opts = {}) {
       }
     );
 
-    console.debug("OpenRouter Response Data:", JSON.stringify(response.data, null, 2));
+    logger.debug("OpenRouter Response Data:", response.data);
 
     const reply = response.data?.choices?.[0]?.message?.content?.trim();
     return reply;
   } catch (error) {
-    console.error("OpenRouter API request failed:");
+    logger.error("OpenRouter API request failed:");
     if (error.response) {
-      console.error("Status:", error.response.status);
-      console.error("Headers:", JSON.stringify(error.response.headers, null, 2));
-      console.error("Data:", JSON.stringify(error.response.data, null, 2));
+      logger.error("Status:", error.response.status);
+      logger.error("Headers:", JSON.stringify(error.response.headers, null, 2));
+      logger.error("Data:", JSON.stringify(error.response.data, null, 2));
     } else if (error.request) {
-      console.error("No response received:", error.request);
+      logger.error("No response received:", error.request);
     } else {
-      console.error("Error message:", error.message);
+      logger.error("Error message:", error.message);
     }
     throw error;
   }
