@@ -8,6 +8,7 @@ const {
 } = require('discord.js');
 const config = require('./config/botConfig');
 const logger = require('./utils/logger');
+const ContextHandler = require('./handlers/ContextHandler');
 const MentionHandler = require('./handlers/MentionHandler');
 const IndexService = require('./services/IndexService');
 const { parseDateRange, DISCORD_EPOCH } = require('./utils/messageUtils');
@@ -18,7 +19,7 @@ class DiscordBot {
       intents: config.discord.intents.map(i => GatewayIntentBits[i])
     });
 
-    this.handlers = [new MentionHandler(this.client)];
+    this.handlers = [new ContextHandler(this.client), new MentionHandler(this.client)];
     this.indexService = new IndexService();
 
     this.setupEventListeners();

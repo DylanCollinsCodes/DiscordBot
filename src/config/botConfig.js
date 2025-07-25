@@ -57,7 +57,8 @@ class BotConfig {
       enabled: process.env.PERSISTENCE_ENABLED
         ? process.env.PERSISTENCE_ENABLED === 'true'
         : true,
-      logsPath: process.env.LOGS_PATH || 'logs'
+      logsPath: process.env.LOGS_PATH || 'logs',
+      contextPath: process.env.CONTEXT_PATH || 'context'
     };
   }
 
