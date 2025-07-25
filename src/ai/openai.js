@@ -6,7 +6,7 @@ module.exports = async function generateOpenAIReply(finalInput) {
   });
 
   const response = await openai.responses.create({
-    model: "gpt-4.1",
+    model: "gpt-4.1-nano",
     input: finalInput,
     text: {
       format: {
