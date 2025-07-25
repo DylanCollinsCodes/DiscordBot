@@ -19,7 +19,7 @@ module.exports = async function generateOpenRouterReply(finalInput, opts = {}) {
 
   // Build payload with optional overrides from opts
   const payload = {
-    model: opts.model || 'deepseek/deepseek-r1-0528:free',
+    model: opts.model || 'tngtech/deepseek-r1t-chimera:free',
     messages,
     temperature: opts.temperature ?? 1,
     top_p: opts.top_p ?? 1,

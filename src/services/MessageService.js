@@ -1,10 +1,12 @@
 const { parseDateRange, fetchMessagesOptimized } = require('../utils/messageUtils');
 const config = require('../config/botConfig');
 const logger = require('../utils/logger');
+const IndexService = require('./IndexService');
 
 class MessageService {
   constructor(channel) {
     this.channel = channel;
+    this.indexService = new IndexService();
   }
 
   /**
@@ -20,14 +22,31 @@ class MessageService {
   async fetchMessagesForContext(dateRange = null) {
     try {
       if (dateRange) {
-        logger.debug('Fetching messages with optimized date range method', { dateRange });
-        
+        logger.debug('Fetching messages for date range', { dateRange });
+
+        // Attempt to retrieve from local index if persistence enabled
+        if (this.indexService.enabled) {
+          const indexed = await this.indexService.getMessagesByDateRange(
+            this.channel.id, dateRange
+          );
+          if (indexed.sorted && indexed.sorted.length > 0) {
+            logger.info(`Retrieved ${indexed.sorted.length} messages from local index`);
+            return {
+              sorted: indexed.sorted,
+              rawLog: indexed.sorted,
+              hitLimit: false,
+              stopTime: null
+            };
+          }
+          logger.info('Local index empty for requested date range, falling back to API fetch');
+        }
+
         // Use optimized fetch for date range queries
         const result = await fetchMessagesOptimized(this.channel, {
           ...dateRange,
           max: config.limits.maxMessagesFetch
         });
-        
+
         // Enhanced logging with performance metrics
         const logData = {
           messagesFound: result.sorted.length,
@@ -40,52 +59,24 @@ class MessageService {
             end: new Date(dateRange.endUTC).toISOString()
           }
         };
-        
+
         if (result.usedFallback) {
           logger.warn('Optimized fetch used fallback to linear search', logData);
         } else {
           logger.info(`✨ Optimized fetch successful: ${result.sorted.length} messages in ${result.fetchTime}ms with ${result.apiCalls} API calls`, logData);
         }
-        
-        // Check if no messages were found in the requested date range
-        if (result.sorted.length === 0) {
-          const startDate = new Date(dateRange.startUTC);
-          const endDate = new Date(dateRange.endUTC);
-          
-          // Format dates for user-friendly display
-          const formatDate = (date) => {
-            return date.toLocaleDateString('en-US', { 
-              year: 'numeric', 
-              month: 'numeric', 
-              day: 'numeric' 
-            });
-          };
-          
-          let dateDisplayText;
-          if (startDate.toDateString() === endDate.toDateString()) {
-            // Single date
-            dateDisplayText = formatDate(startDate);
-          } else {
-            // Date range
-            dateDisplayText = `${formatDate(startDate)} - ${formatDate(endDate)}`;
-          }
-          
-          logger.info(`No messages found for requested date range: ${dateDisplayText}`);
-          
-          // Add a flag to indicate no messages were found
-          result.noMessagesFound = true;
-          result.requestedDateRange = dateDisplayText;
-        }
-        
+
+        // Return API-fetched result
         return result;
       } else {
+        // Default context fetch
         logger.debug('Fetching default context messages');
-        const fetched = await this.channel.messages.fetch({ 
-          limit: config.limits.defaultContextMessages 
+        const fetched = await this.channel.messages.fetch({
+          limit: config.limits.defaultContextMessages
         });
         const sorted = Array.from(fetched.values())
           .sort((a, b) => a.createdTimestamp - b.createdTimestamp);
-        
+
         logger.info(`Fetched ${sorted.length} context messages`);
         return {
           sorted,
@@ -105,19 +96,18 @@ class MessageService {
    */
   extractUserPrompt(content, botId) {
     try {
-      // Remove date range braces and bot mention
       let userPrompt = content
         .replace(/\{[^}]*\}/, '')
         .replace(`<@${botId}>`, '')
         .trim();
-      
+
       if (!userPrompt) {
         userPrompt = config.ai.defaultPrompt;
         logger.debug('Using default prompt');
       } else {
         logger.debug('Extracted user prompt', { prompt: userPrompt });
       }
-      
+
       return userPrompt;
     } catch (error) {
       logger.error('Failed to extract user prompt:', { error: error.message });
@@ -132,24 +122,22 @@ class MessageService {
     if (!config.debug.enabled) return;
 
     try {
-      // Write fetched messages debug file
       const fetchedLog = rawMessages.map(m => ({
         id: m.id,
         authorId: m.author.id,
         content: m.content,
         createdAt: new Date(m.createdTimestamp).toISOString()
       }));
-      
+
       logger.writeDebugFile(
-        config.debug.fetchedFile, 
-        fetchedLog, 
+        config.debug.fetchedFile,
+        fetchedLog,
         'Fetched messages log'
       );
 
-      // Write AI input debug file
       logger.writeDebugFile(
-        config.debug.inputFile, 
-        aiInput, 
+        config.debug.inputFile,
+        aiInput,
         'AI input array'
       );
     } catch (error) {

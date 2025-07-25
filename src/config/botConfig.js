@@ -51,6 +51,14 @@ class BotConfig {
       fetchedFile: constants.DEBUG_FETCHED_FILE,
       inputFile: constants.DEBUG_INPUT_FILE
     };
+
+    this.persistence = {
+      // Default persistence enabled unless explicitly set to "false"
+      enabled: process.env.PERSISTENCE_ENABLED
+        ? process.env.PERSISTENCE_ENABLED === 'true'
+        : true,
+      logsPath: process.env.LOGS_PATH || 'logs'
+    };
   }
 
   get(path) {

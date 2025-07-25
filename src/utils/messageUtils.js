@@ -517,6 +517,7 @@ function buildOpenAIInput(sorted, userPrompt, botId) {
 }
 
 module.exports = {
+  DISCORD_EPOCH,
   parseDateRange,
   fetchMessages,
   fetchMessagesOptimized,
