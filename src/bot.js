@@ -25,8 +25,13 @@ class DiscordBot {
   }
 
   setupEventListeners() {
+    // Bot ready event
     this.client.once('ready', async () => {
-      logger.info(`Bot logged in as ${this.client.user.tag}!`);
+      logger.info(`Bot logged in as ${this.client.user.tag}!`, {
+        botId: this.client.user.id,
+        botUsername: this.client.user.username,
+        botDiscriminator: this.client.user.discriminator
+      });
 
       // Register slash command /index
       const commands = [
@@ -73,7 +78,7 @@ class DiscordBot {
         `${String(new Date(summary.from).getMonth() + 1).padStart(2, '0')}.jsonl`;
       await interaction.editReply(
         `Indexed ${summary.count} messages from ${summary.from} to ${summary.to} in ${summary.timeMs}ms.\n` +
-        `Logs: ${logPath}`
+        `Logs saved for date range: ${summary.from} to ${summary.to}`
       );
     });
 
@@ -98,7 +103,7 @@ class DiscordBot {
           `${String(new Date(summary.from).getMonth() + 1).padStart(2, '0')}.jsonl`;
         await message.reply(
           `Indexed ${summary.count} messages from ${summary.from} to ${summary.to} in ${summary.timeMs}ms.\n` +
-          `Logs: ${logPath}`
+          `Logs saved for date range: ${summary.from} to ${summary.to}`
         );
         return;
       }
@@ -115,7 +120,7 @@ class DiscordBot {
       logger.error('Discord client error:', { error: error.message });
     });
     process.on('unhandledRejection', error => {
-      logger.error('Unhandled rejection:', { error: error.message });
+      logger.error('Unhandled promise rejection:', { error: error.message });
     });
     process.on('uncaughtException', error => {
       logger.error('Uncaught exception:', { error: error.message });
@@ -125,38 +130,106 @@ class DiscordBot {
 
   async handleMessage(message) {
     try {
+      // Enhanced logging to catch ALL messages
       logger.info('🔔 MESSAGE RECEIVED:', {
         messageId: message.id,
         authorId: message.author.id,
+        authorTag: message.author.tag,
         channelId: message.channel.id,
-        content: message.content
+        content: message.content,
+        contentLength: message.content.length,
+        mentions: message.mentions.users.map(user => ({ id: user.id, tag: user.tag })),
+        mentionsBot: message.mentions.has(this.client.user),
+        isBot: message.author.bot,
+        timestamp: new Date().toISOString(),
+        createdAt: message.createdAt.toISOString()
       });
 
-      // Detect date patterns but let handlers decide
-      const hasDatePattern = /\{\s*([0-9/]+|Today)(?:\s*-\s*([0-9/]+|Today))?\s*\}/i.test(
-        message.content
-      );
+      // Specifically check for date patterns
+      const hasDatePattern = /\{\s*([0-9/]+|Today)(?:\s*-\s*([0-9/]+|Today))?\s*\}/i.test(message.content);
       if (hasDatePattern) {
-        logger.info('📅 DATE PATTERN DETECTED', { content: message.content });
+        logger.info('📅 DATE PATTERN DETECTED:', {
+          messageId: message.id,
+          content: message.content,
+          authorTag: message.author.tag,
+          mentionsBot: message.mentions.has(this.client.user)
+        });
       }
 
+      // Find a handler that can process this message
+      let handlerFound = false;
       for (const handler of this.handlers) {
-        if (handler.shouldHandle(message)) {
-          await handler.handle(message);
-          return;
+        const shouldHandle = handler.shouldHandle(message);
+        logger.debug('🔍 Checking handler:', {
+          handlerName: handler.constructor.name,
+          shouldHandle,
+          messageId: message.id,
+          mentionsBot: message.mentions.has(this.client.user),
+          isBot: message.author.bot
+        });
+
+        if (shouldHandle) {
+          logger.info('✅ Handler processing message:', {
+            handlerName: handler.constructor.name,
+            messageId: message.id,
+            content: message.content.substring(0, 100)
+          });
+
+          try {
+            await handler.handle(message);
+            logger.info('✅ Handler completed successfully:', {
+              handlerName: handler.constructor.name,
+              messageId: message.id
+            });
+          } catch (handlerError) {
+            logger.error('❌ Handler execution failed:', {
+              handlerName: handler.constructor.name,
+              messageId: message.id,
+              error: handlerError.message,
+              stack: handlerError.stack
+            });
+            throw handlerError; // Re-throw to be caught by outer try-catch
+          }
+
+          handlerFound = true;
+          break; // Only process with first matching handler
         }
       }
-      logger.debug('No handler matched message');
+
+      if (!handlerFound) {
+        logger.warn('⚠️ No handler found for message:', {
+          messageId: message.id,
+          content: message.content.substring(0, 100),
+          mentionsBot: message.mentions.has(this.client.user),
+          isBot: message.author.bot,
+          authorTag: message.author.tag
+        });
+      }
     } catch (error) {
-      logger.error('Error in handleMessage:', { error: error.message });
+      logger.error('💥 CRITICAL MESSAGE HANDLING ERROR:', {
+        messageId: message?.id,
+        authorId: message?.author?.id,
+        authorTag: message?.author?.tag,
+        channelId: message?.channel?.id,
+        content: message?.content?.substring(0, 200),
+        error: error.message,
+        stack: error.stack
+      });
+
+      // Try to reply with error if possible
       try {
-        await message.reply('Error processing your message.');
-      } catch {}
+        if (message && message.reply) {
+          await message.reply("I encountered an error processing your message. Please try again.");
+        }
+      } catch (replyError) {
+        logger.error('Failed to send error reply:', { error: replyError.message });
+      }
     }
   }
 
   async start() {
     try {
+      logger.info('Starting Discord bot...');
       await this.client.login(config.discord.token);
     } catch (error) {
       logger.error('Failed to start bot:', { error: error.message });
@@ -166,6 +239,7 @@ class DiscordBot {
 
   async stop() {
     try {
+      logger.info('Stopping Discord bot...');
       await this.client.destroy();
     } catch (error) {
       logger.error('Error stopping bot:', { error: error.message });

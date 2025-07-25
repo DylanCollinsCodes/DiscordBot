@@ -105,9 +105,20 @@ class IndexService {
       // Fetch messages using optimized method
       const result = await fetchMessagesOptimized(channel, { startUTC, endUTC, max: Number.MAX_SAFE_INTEGER });
       const toIndex = result.rawLog || result.sorted;
+      const totalItems = toIndex.length;
+      const quartile = Math.floor(totalItems / 4);
+      let nextThreshold = quartile;
+      let percent = 25;
       for (const msg of toIndex) {
         await this.appendMessage(msg);
         total++;
+        if (total >= nextThreshold) {
+          try {
+            await channel.send(`Indexing progress: ${percent}% complete.`);
+          } catch {}
+          percent += 25;
+          nextThreshold += quartile;
+        }
       }
 
       // If fallback was used or rawLog missing, fetch remaining via linear
