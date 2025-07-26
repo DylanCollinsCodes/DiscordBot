@@ -21,9 +21,7 @@ module.exports = async function generateOpenRouterReply(finalInput, opts = {}) {
   const payload = {
     model: opts.model || 'tngtech/deepseek-r1t-chimera:free',
     messages,
-    temperature: opts.temperature ?? 1,
-    top_p: opts.top_p ?? 1,
-    n: opts.n ?? 1
+    response_format: { type: "text" },
   };
 
   logger.debug("OpenRouter Request Payload:", payload);

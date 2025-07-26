@@ -51,54 +51,37 @@ class ContextHandler extends BaseHandler {
         }
         case 'get': {
           if (args.length < 1) {
-            return message.reply('Usage: !ctx get <userId>');
+            return message.reply('Usage: !ctx get <username>');
           }
-          let userId;
-          const mention = message.mentions.users.first();
-          if (mention) {
-            userId = mention.id;
-          } else {
-            const raw = args[0];
-            userId = raw.match(/^<@!?(\d+)>$/)?.[1] || raw;
-          }
-          const userCtx = await this.contextService.getUser(userId);
-          logger.debug('Retrieving user context', { userId, count: Object.keys(userCtx).length });
-          return message.reply('Context for user ' + userId + ':\n```' + JSON.stringify(userCtx, null, 2) + '```');
+          const username = args[0];
+          const userCtx = await this.contextService.getUser(username);
+          logger.debug('Retrieving user context', { username, count: Object.keys(userCtx).length });
+          return message.reply('Context for user ' + username + ':\n```' + JSON.stringify(userCtx, null, 2) + '```');
         }
         case 'adduser': {
           if (args.length < 3) {
-            return message.reply('Usage: !ctx adduser <userId> <key> <value>');
+            return message.reply('Usage: !ctx adduser <@user> <key> <value>');
           }
-          let userId;
           const mention = message.mentions.users.first();
-          if (mention) {
-            userId = mention.id;
-          } else {
-            const raw = args[0];
-            userId = raw.match(/^<@!?(\d+)>$/)?.[1] || raw;
+          if (!mention) {
+            return message.reply('You must mention a user.');
           }
+          const username = mention.username;
           const key = args[1];
           const value = args.slice(2).join(' ');
-          await this.contextService.addUser(userId, key, value);
-          logger.info('User context added', { userId, key });
-          return message.reply(`Context for user <@${userId}> set to: ${value}`);
+          await this.contextService.addUser(username, key, value);
+          logger.info('User context added', { username, key });
+          return message.reply(`Context for user ${username} set to: ${value}`);
         }
         case 'deluser': {
           if (args.length < 2) {
-            return message.reply('Usage: !ctx deluser <userId> <key>');
+            return message.reply('Usage: !ctx deluser <username> <key>');
           }
-          let userId;
-          const mention = message.mentions.users.first();
-          if (mention) {
-            userId = mention.id;
-          } else {
-            const raw = args[0];
-            userId = raw.match(/^<@!?(\d+)>$/)?.[1] || raw;
-          }
+          const username = args[0];
           const key = args[1];
-          await this.contextService.deleteUser(userId, key);
-          logger.info('User context deleted', { userId, key });
-          return message.reply(`Context deleted for user ${userId}: ${key}`);
+          await this.contextService.deleteUser(username, key);
+          logger.info('User context deleted', { username, key });
+          return message.reply(`Context deleted for user ${username}: ${key}`);
         }
         default:
           return message.reply(

@@ -71,12 +71,27 @@ class MessageService {
       } else {
         // Default context fetch
         logger.debug('Fetching default context messages');
+        if (this.indexService.enabled) {
+          logger.debug('Fetching default context from index');
+          const now = Date.now();
+          const indexed = await this.indexService.getMessagesByDateRange(
+            this.channel.id,
+            { startUTC: 0, endUTC: now }
+          );
+          const slice = indexed.sorted.slice(-config.limits.defaultContextMessages);
+          logger.info(`Fetched ${slice.length} context messages from index`);
+          return {
+            sorted: slice,
+            rawLog: slice,
+            hitLimit: false,
+            stopTime: null
+          };
+        }
         const fetched = await this.channel.messages.fetch({
           limit: config.limits.defaultContextMessages
         });
         const sorted = Array.from(fetched.values())
           .sort((a, b) => a.createdTimestamp - b.createdTimestamp);
-
         logger.info(`Fetched ${sorted.length} context messages`);
         return {
           sorted,

@@ -64,50 +64,54 @@ class ContextService {
   }
 
   // User-specific context methods
-  async addUser(userId, key, value) {
+  async addUser(username, key, value) {
     if (!this.enabled) return;
-    const contextValue = `${key} ${value}`;
-    logger.debug('Adding context for user', { userId, contextValue });
+    logger.debug('Adding context for user', { username, key, value });
     const data = await this._load();
     data.users = data.users || {};
-    data.users[userId] = contextValue;
+    data.users[username] = data.users[username] || {};
+    data.users[username][key] = value;
     await this._save(data);
-    logger.info('User context added', { userId });
+    logger.info('User context added', { username, key });
   }
 
-  async getUser(userId) {
+  async getUser(username) {
     if (!this.enabled) return {};
     const data = await this._load();
-    return (data.users && data.users[userId]) || {};
+    return (data.users && data.users[username]) || {};
   }
 
-  async deleteUser(userId, key) {
+  async deleteUser(username, key) {
     if (!this.enabled) return;
-    logger.debug('Deleting context for user', { userId });
+    logger.debug('Deleting context for user', { username, key });
     const data = await this._load();
-    if (data.users && data.users[userId]) {
-      delete data.users[userId];
+    if (data.users && data.users[username] && data.users[username][key]) {
+      delete data.users[username][key];
+      if (Object.keys(data.users[username]).length === 0) {
+        delete data.users[username];
+      }
       await this._save(data);
-      logger.info('User context deleted', { userId });
+      logger.info('User context deleted', { username, key });
     }
   }
 
-  async getCombinedContext(userIds = []) {
-    if (!this.enabled) return [];
-    logger.debug('Building combined context', { userIds });
-    const data = await this._load();
+    async getCombinedContext(usernames = []) {
+      if (!this.enabled) return [];
+      logger.debug('Building combined context', { usernames });
+      const data = await this._load();
+      if (usernames.length === 0) {
+        usernames = Object.keys(data.users || {});
+        logger.debug('Including all stored usernames since none were tagged', { usernames });
+      }
     const combined = [];
     Object.entries(data.global || {}).forEach(([key, value]) => {
       combined.push({ type: 'global', key, value });
     });
-    userIds.forEach(userId => {
-      const userCtx = data.users && data.users[userId];
-      if (!userCtx) return;
-      if (typeof userCtx === 'string') {
-        combined.push({ type: 'user', userId, key: '', value: userCtx });
-      } else {
+    usernames.forEach(username => {
+      const userCtx = data.users && data.users[username];
+      if (userCtx) {
         Object.entries(userCtx).forEach(([key, value]) => {
-          combined.push({ type: 'user', userId, key, value });
+          combined.push({ type: 'user', username, key, value });
         });
       }
     });
