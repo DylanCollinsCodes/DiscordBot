@@ -103,7 +103,8 @@ class MentionHandler extends BaseHandler {
       const { input: aiInput, response } = await AIService.processAIRequest(
         sorted,
         userPrompt,
-        this.client.user.id
+        this.client.user.id,
+        this.client.user.username
       );
       logger.debug('AI request processed successfully');
 

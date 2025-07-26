@@ -485,38 +485,35 @@ async function fetchMessages(channel, { startUTC, endUTC, max = 1000 }) {
 }
 
 function buildOpenAIInput(sorted, userPrompt, botId) {
-  const input = sorted.map(msg => {
-    const username = msg.author?.username || msg.author?.id || "unknown";
-    const date = new Date(msg.createdTimestamp);
-    const dateStr = date.toISOString().replace('T', ' ').slice(0, 16);
-    let text = msg.id === botId
-      ? userPrompt
+  const messages = sorted.map(msg => {
+    const isBot = msg.author.id === botId;
+    const role = isBot ? 'assistant' : 'user';
+    const username = msg.author?.username || 'unknown';
+    const dateStr = new Date(msg.createdTimestamp).toISOString().slice(0, 16).replace('T', ' ');
+    
+    // For user messages, prepend with metadata. For bot, just use content.
+    const content = isBot 
+      ? msg.content
       : `[${username} @ ${dateStr}] ${msg.content}`;
+      
     return {
-      role: "user",
-      content: [
-        {
-          type: "input_text",
-          text: text
-        }
-      ]
+      role: role,
+      content: content
     };
   });
 
-  const systemMessage = {
-    role: "system",
-    content: [
-      {
-        type: "input_text",
-        text: userPrompt
-      }
-    ]
-  };
+  // Add the current user's prompt as the last message
+  messages.push({
+    role: 'user',
+    content: userPrompt
+  });
 
-  return [systemMessage, ...input];
+  // The system message is now built in AIService, so we just return the message history
+  return messages;
 }
 
 module.exports = {
+  DISCORD_EPOCH,
   parseDateRange,
   fetchMessages,
   fetchMessagesOptimized,
